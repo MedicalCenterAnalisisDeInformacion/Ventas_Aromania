@@ -204,6 +204,30 @@ def procesar_lineas_categoria(vm, art_dim, suc, bol_list):
     for c in ["ventas","utilidad"]:
         agg[c] = agg[c].round(2)
     return agg
+def procesar_categorias_diario(vmc, art_dim, suc, bol_list):
+    """Ventas diarias por Línea y Categoría, usado para graficar la tendencia
+    día a día en la pestaña 'Resumen Mes Actual'. Se basa en 'VentasMesCurso'
+    (ya filtrada al mes real, vmc_actual) cruzada con la dimensión de
+    artículos para obtener Línea/Categoría."""
+    vmc = vmc.copy()
+    vmc["ClaveSucursal"] = pd.to_numeric(vmc["ClaveSucursal"], errors="coerce").fillna(0).astype(int)
+    vmc = vmc[~vmc["Artículo"].isin(bol_list)]
+    suc_clean = suc.drop_duplicates(subset=["ClaveSucursal"])
+    vmc = vmc.merge(suc_clean, on="ClaveSucursal", how="left")
+    vmc["NombreSucursal"] = vmc["NombreSucursal"].fillna("OTRO")
+    art_clean = art_dim.drop_duplicates(subset=["Artículo"])
+    vmc = vmc.merge(art_clean[["Artículo","Línea","Categoría"]], on="Artículo", how="left")
+    vmc["Línea"]     = vmc["Línea"].fillna("NO ASIGNADO")
+    vmc["Categoría"] = vmc["Categoría"].fillna("SIN CATEGORÍA")
+    vmc["FechaStr"] = pd.to_datetime(vmc["Fechas de emisión"]).dt.strftime("%Y-%m-%d")
+    agg = vmc.groupby(["FechaStr","Línea","Categoría","NombreSucursal"]).agg(
+        unidades =("Unidades","sum"),
+        ventas   =("Importe c/Desc","sum"),
+        utilidad =("Utilidad","sum"),
+    ).reset_index()
+    for c in ["ventas","utilidad"]:
+        agg[c] = agg[c].round(2)
+    return agg
 def procesar_fabricantes(vm, art_dim, suc, bol_list):
     vm = vm.copy()
     vm["ClaveSucursal"] = pd.to_numeric(vm["ClaveSucursal"], errors="coerce").fillna(0).astype(int)
@@ -402,7 +426,7 @@ def ordenar_sucursales_por_apertura(suc: pd.DataFrame, objetivos: pd.DataFrame) 
     orden_final = pd.concat([con_fecha, sin_fecha], ignore_index=True)
     return orden_final["NombreSucursal"].tolist()
 def generar_html(agg, linea_agg, historico_agg, top_art_agg, lineas_cat_agg, fabricantes_agg,
-                 presupuesto_agg, lista_sucursales, fecha_reporte, fecha_info, mes_header,
+                 presupuesto_agg, categorias_diario_agg, lista_sucursales, fecha_reporte, fecha_info, mes_header,
                  current_period_label, resumenes_anteriores=None):
     resumenes_anteriores = resumenes_anteriores or []
     # ── Pestañas extra "Resumen <Mes>" (mes(es) cerrados detectados mezclados
@@ -446,6 +470,7 @@ def generar_html(agg, linea_agg, historico_agg, top_art_agg, lineas_cat_agg, fab
     lineas_cat_json   = json.dumps(lineas_cat_agg.to_dict("records"),ensure_ascii=False)
     fabricantes_json  = json.dumps(fabricantes_agg.to_dict("records"),ensure_ascii=False)
     presupuesto_json  = json.dumps(presupuesto_agg.to_dict("records"),ensure_ascii=False)
+    categorias_diario_json = json.dumps(categorias_diario_agg.to_dict("records"), ensure_ascii=False)
     sucursales_json   = json.dumps(lista_sucursales,                  ensure_ascii=False)
     current_period_json = json.dumps(current_period_label,            ensure_ascii=False)
     periodos_unicos = (
@@ -534,7 +559,7 @@ td.rank.top3{color:#00B0F0}
 .pill.lo{background:#fbe4e4;color:#a12727}
 .charts-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:.9rem}
 .cc{background:#fff;border-radius:12px;padding:1.2rem 1.6rem;border:1px solid #D2ECF5;box-shadow:0 2px 6px rgba(0,0,0,0.015)}
-.lines-container{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:.9rem;margin-top:1.5rem;align-items:start}
+.lines-container{display:flex;flex-direction:column;gap:.9rem;margin-top:1.5rem}
 .lines-table-box,.lines-chart-box{background:#fff;border-radius:12px;padding:1.2rem 1.6rem;border:1px solid #D2ECF5;box-shadow:0 2px 6px rgba(0,0,0,0.015);display:flex;flex-direction:column;min-width:0}
 .hist-card{background:#fff;border-radius:12px;padding:1.2rem 1.6rem;border:1px solid #D2ECF5;box-shadow:0 2px 6px rgba(0,0,0,0.015)}
 .cw{position:relative;height:265px}
@@ -577,9 +602,6 @@ tr.fq-parent td{padding-top:10px;padding-bottom:10px}
 }
 .table-scale-wrap table{
   transform-origin: top left;
-}
-@media (max-width: 768px){
-  .lines-container{grid-template-columns:1fr}
 }
 @media (max-width: 640px){
   .main{padding:1.2rem 1rem 2.5rem}
@@ -699,7 +721,7 @@ tr.fq-parent td{padding-top:10px;padding-bottom:10px}
   <div class="tc" style="margin-bottom:.9rem">
     <div class="card-head">
       <div><div class="card-title">Comparativo por Sucursal · Mes en Curso</div><div class="card-sub">Unidades, ventas, utilidad y margen acumulados del mes</div></div>
-      <span class="note-bol">Sólo __MES_HEADER__</span>
+      <span class="note-bol">Sólo mes en curso</span>
     </div>
     <div class="table-scale-wrap">
     <table>
@@ -724,25 +746,25 @@ tr.fq-parent td{padding-top:10px;padding-bottom:10px}
   <div class="lines-container">
     <div class="lines-table-box">
       <div class="card-head">
-        <div><div class="card-title">Resumen de Ventas por Línea · Mes en Curso</div><div class="card-sub">Sólo __MES_HEADER__</div></div>
+        <div><div class="card-title">Resumen de Ventas por Línea - Categoría · Mes en Curso</div><div class="card-sub">Sólo mes en curso</div></div>
       </div>
       <div class="table-scale-wrap">
         <table>
-          <thead><tr><th>Línea</th><th class="r">Unidades</th><th class="r">Ventas $</th><th class="r">Utilidad</th><th class="r">Margen</th></tr></thead>
+          <thead><tr><th style="width:26px"></th><th>Línea</th><th class="r">Unidades</th><th class="r">Ventas $</th><th class="r">Utilidad</th><th class="r">Margen</th></tr></thead>
           <tbody id="tabla-lineas-actual"></tbody>
         </table>
       </div>
     </div>
     <div class="lines-chart-box">
       <div class="card-head" style="margin-bottom:.7rem">
-        <div><div class="card-title">Porcentaje de Participación (%)</div><div class="card-sub">Mes en curso</div></div>
+        <div><div class="card-title">Tendencia de Categorías</div><div class="card-sub">Evolución diaria por categoría · Mes en curso</div></div>
         <div class="metric-tabs">
           <button class="tab-btn active" id="btn-ma-ventas"   onclick="changeLineMetricActual('ventas')">Ventas c/Desc</button>
           <button class="tab-btn"        id="btn-ma-unidades" onclick="changeLineMetricActual('unidades')">Unidades</button>
           <button class="tab-btn"        id="btn-ma-utilidad" onclick="changeLineMetricActual('utilidad')">Utilidad</button>
         </div>
       </div>
-      <div class="cw bars-horizontal" id="lineasactual-chart-wrap"><canvas id="chart-lineasactual"></canvas></div>
+      <div class="cw" id="lineasactual-chart-wrap"><canvas id="chart-lineasactual"></canvas></div>
     </div>
   </div>
 </div>
@@ -785,25 +807,25 @@ tr.fq-parent td{padding-top:10px;padding-bottom:10px}
   <div class="lines-container">
     <div class="lines-table-box">
       <div class="card-head">
-        <div><div class="card-title">Resumen de Ventas Acumuladas por Línea</div><div class="card-sub">Acumulado de ventas según selección</div></div>
+        <div><div class="card-title">Resumen de Ventas Acumuladas por Línea - Categoría</div><div class="card-sub">Acumulado de ventas según selección</div></div>
       </div>
       <div class="table-scale-wrap">
         <table>
-          <thead><tr><th>Línea</th><th class="r">Unidades</th><th class="r">Ventas $</th><th class="r">Utilidad</th><th class="r">Margen</th></tr></thead>
+          <thead><tr><th style="width:26px"></th><th>Línea</th><th class="r">Unidades</th><th class="r">Ventas $</th><th class="r">Utilidad</th><th class="r">Margen</th></tr></thead>
           <tbody id="tabla-lineas"></tbody>
         </table>
       </div>
     </div>
     <div class="lines-chart-box">
       <div class="card-head" style="margin-bottom:.7rem">
-        <div><div class="card-title">Porcentaje de Participación (%)</div><div class="card-sub">Proporción porcentual de acuerdo a Ventas, Unidades o Utilidad</div></div>
+        <div><div class="card-title">Tendencia de Categorías</div><div class="card-sub">Evolución mensual por categoría · Sucursales y meses seleccionados</div></div>
         <div class="metric-tabs">
           <button class="tab-btn active" id="btn-m-ventas"   onclick="changeLineMetric('ventas')">Ventas c/Desc</button>
           <button class="tab-btn"        id="btn-m-unidades" onclick="changeLineMetric('unidades')">Unidades</button>
           <button class="tab-btn"        id="btn-m-utilidad" onclick="changeLineMetric('utilidad')">Utilidad</button>
         </div>
       </div>
-      <div class="cw bars-horizontal" id="lineas-chart-wrap"><canvas id="chart-lineas"></canvas></div>
+      <div class="cw" id="lineas-chart-wrap"><canvas id="chart-lineas"></canvas></div>
     </div>
   </div>
 </div>
@@ -935,6 +957,7 @@ document.addEventListener("DOMContentLoaded", function() {
     const LINEAS_CAT  = __LINEAS_CAT_JSON__;
     const FABRICANTES = __FABRICANTES_JSON__;
     const PRESUPUESTO = __PRESUPUESTO_JSON__;
+    const CATEGORIAS_DIARIO = __CATEGORIAS_DIARIO_JSON__;
     const SUCS        = __SUCURSALES_JSON__;
     const PERIODOS    = __PERIODOS_JSON__;
     const RESUMENES_ANT = __RESUMENES_ANT_JSON__;
@@ -983,6 +1006,16 @@ document.addEventListener("DOMContentLoaded", function() {
     }
     const ALL_LINEAS = [...new Set(LINEAS.map(r => r.Línea))].sort();
     const LC = buildColorMap(ALL_LINEAS, PALETTE_LINEAS);
+    // Colores por Categoría (para las gráficas de tendencia por categoría en
+    // 'Resumen Mes Actual' y 'Resumen Histórico'). Se combinan las categorías
+    // presentes en el histórico mensual y en el detalle diario del mes en
+    // curso, más 'Otras categorías' (usado cuando hay más de TOP_N).
+    const ALL_CATEGORIAS = [...new Set([
+        ...LINEAS_CAT.map(r => r.Categoría),
+        ...CATEGORIAS_DIARIO.map(r => r.Categoría),
+        'Otras categorías'
+    ])].sort();
+    const CATC = buildColorMap(ALL_CATEGORIAS, PALETTE);
     let SC = {};
     const DAYS = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     let active      = new Set(SUCS);
@@ -1214,6 +1247,11 @@ document.addEventListener("DOMContentLoaded", function() {
             active.has(r.NombreSucursal) && activeMeses.has(r.PeriodoLabel)
         );
     }
+    function getFilteredCategoriasDiario() {
+        // Sólo filtra por sucursal: este dataset ya viene acotado al mes en
+        // curso real (no aplica el segmentador de meses, oculto en esta pestaña).
+        return CATEGORIAS_DIARIO.filter(r => active.has(r.NombreSucursal));
+    }
     function salesColor(t){
         const clamped = Math.max(0, Math.min(1, t));
         const c1 = [207,236,248], c2 = [6,60,84];
@@ -1315,11 +1353,13 @@ document.addEventListener("DOMContentLoaded", function() {
         const rows = data.map(r => {
             tU += r.unidadesActual; tV += r.ventasActual; tUt += r.utilidadActual;
             tP += r.pronostico;
+            // Presupuesto/cumplimiento se dejan EN BLANCO (no en cero) cuando la
+            // sucursal no tiene presupuesto asignado para el mes en curso.
             const tienePresupuesto = r.presupuesto !== null && r.presupuesto !== undefined && r.presupuesto > 0;
             if(tienePresupuesto){ tB += r.presupuesto; tVpres += r.ventasActual; }
             const cump  = tienePresupuesto ? r.ventasActual/r.presupuesto : null;
             const cls   = tienePresupuesto ? (cump>=0.98 ? 'hi' : cump>=0.90 ? 'mi' : 'lo') : '';
-            const mgCls = r.margen>=0.50 ? 'hi' : 'mi';
+            const mgCls = r.margen>=0.40 ? 'hi' : 'mi';
             return `<tr>
                 <td data-label="Sucursal"><b>${r.NombreSucursal}</b></td>
                 <td class="r" data-label="Unidades">${fN(r.unidadesActual)}</td>
@@ -1331,6 +1371,9 @@ document.addEventListener("DOMContentLoaded", function() {
                 <td class="r" data-label="Pronóstico de Alcance"><b>${fF(r.pronostico)}</b></td>
             </tr>`;
         }).join('');
+        // El total de Presupuesto y Cumplimiento se calculan SOLO con las
+        // sucursales que sí tienen presupuesto asignado; las que no lo tienen
+        // no se convierten en cero ni distorsionan este acumulado.
         const totMg   = tV>0 ? tUt/tV : 0;
         const totCump = tB>0 ? tVpres/tB : 0;
         const totCls  = totCump>=0.98 ? 'hi' : totCump>=0.90 ? 'mi' : 'lo';
@@ -1341,7 +1384,7 @@ document.addEventListener("DOMContentLoaded", function() {
             <td class="r" data-label="Unidades">${fN(tU)}</td>
             <td class="r" data-label="Venta $">${fF(tV)}</td>
             <td class="r" data-label="Utilidad">${fF(tUt)}</td>
-            <td class="r" data-label="Margen"><span class="pill ${totMg>=.50?'hi':'mi'}">${fP(totMg)}</span></td>
+            <td class="r" data-label="Margen"><span class="pill ${totMg>=.40?'hi':'mi'}">${fP(totMg)}</span></td>
             <td class="r" data-label="Presupuesto" data-col="presupuesto">${totPresTexto}</td>
             <td class="r" data-label="Cumplimiento" data-col="alcance">${totCumplimientoTd}</td>
             <td class="r" data-label="Pronóstico de Alcance"><b>${fF(tP)}</b></td>
@@ -1493,14 +1536,14 @@ document.addEventListener("DOMContentLoaded", function() {
         const rows = valid.map(d => {
             const r  = byDate[d];
             const mg = r.ventas>0 ? r.utilidad/r.ventas : 0;
-            const pill = mg>=.50 ? 'hi' : 'mi';
+            const pill = mg>=.40 ? 'hi' : 'mi';
             const dn = DAYS[new Date(d+'T12:00:00').getDay()];
             const mAbr = MESES_ABR[parseInt(d.slice(5,7),10)-1];
             tUn+=r.unidades; tV+=r.ventas; tU+=r.utilidad; tTk+=r.tickets;
             return `<tr><td class="date" data-label="Fecha">${d.slice(8)} ${mAbr}</td><td class="dayname" data-label="Día">${dn}</td><td class="r" data-label="Unidades">${fN(r.unidades)}</td><td class="r" data-label="Ventas $"><b>${fF(r.ventas)}</b></td><td class="r" data-label="Utilidad">${fF(r.utilidad)}</td><td class="r" data-label="Margen"><span class="pill ${pill}">${fP(mg)}</span></td><td class="r" data-label="Tickets"><b>${fN(r.tickets)}</b></td></tr>`;
         }).join('');
         const totMg = tV>0 ? tU/tV : 0;
-        tbody.innerHTML = rows + `<tr class="total-row"><td data-label="" colspan="2"><b>TOTAL PERÍODO</b></td><td class="r" data-label="Unidades">${fN(tUn)}</td><td class="r" data-label="Ventas $">${fF(tV)}</td><td class="r" data-label="Utilidad">${fF(tU)}</td><td class="r" data-label="Margen"><span class="pill ${totMg>=.50?'hi':'mi'}">${fP(totMg)}</span></td><td class="r" data-label="Tickets">${fN(tTk)}</td></tr>`;
+        tbody.innerHTML = rows + `<tr class="total-row"><td data-label="" colspan="2"><b>TOTAL PERÍODO</b></td><td class="r" data-label="Unidades">${fN(tUn)}</td><td class="r" data-label="Ventas $">${fF(tV)}</td><td class="r" data-label="Utilidad">${fF(tU)}</td><td class="r" data-label="Margen"><span class="pill ${totMg>=.40?'hi':'mi'}">${fP(totMg)}</span></td><td class="r" data-label="Tickets">${fN(tTk)}</td></tr>`;
     }
     function updateChartGeneric(chartId, field, sourceData, dates, byDate, activeSucs, multi){
         dc(chartId);
@@ -1546,47 +1589,102 @@ document.addEventListener("DOMContentLoaded", function() {
     function updateLineas(){
         dc('lineas');
         const tbody    = document.getElementById('tabla-lineas');
-        const filtered = getFilteredLineas();
-        const lineMap  = {};
+        const filtered = getFilteredLineasCat();
+        if(!filtered.length){
+            tbody.innerHTML = '<tr><td colspan="6" class="empty">Selecciona sucursales y meses para desplegar líneas.</td></tr>';
+            document.getElementById('lineas-chart-wrap').style.height = '220px';
+            fitTables();
+            return;
+        }
+        // ── Tabla expandible: Línea (total) -> Categorías (detalle) ──
+        const catMap  = {};   // Línea|||Categoría -> totales
+        const lineMap = {};   // Línea -> totales + lista de categorías
         let totalUnidades=0, totalVentas=0, totalUtilidad=0;
         filtered.forEach(r => {
-            if(!lineMap[r.Línea]) lineMap[r.Línea] = {Línea:r.Línea, unidades:0, ventas:0, utilidad:0};
+            const k = r.Línea + '|||' + r.Categoría;
+            if(!catMap[k]) catMap[k] = {Línea:r.Línea, Categoría:r.Categoría, unidades:0, ventas:0, utilidad:0};
+            catMap[k].unidades += r.unidades;
+            catMap[k].ventas   += r.ventas;
+            catMap[k].utilidad += r.utilidad;
+            if(!lineMap[r.Línea]) lineMap[r.Línea] = {Línea:r.Línea, unidades:0, ventas:0, utilidad:0, cats:[]};
             lineMap[r.Línea].unidades += r.unidades;
             lineMap[r.Línea].ventas   += r.ventas;
             lineMap[r.Línea].utilidad += r.utilidad;
             totalUnidades += r.unidades; totalVentas += r.ventas; totalUtilidad += r.utilidad;
         });
-        const sorted = Object.values(lineMap).sort((a,b) => b[currentLineMetric]-a[currentLineMetric]);
-        if(!sorted.length){
-            tbody.innerHTML = '<tr><td colspan="5" class="empty">Selecciona sucursales para desplegar líneas.</td></tr>';
-            document.getElementById('lineas-chart-wrap').style.height = '220px';
-            fitTables();
-            return;
-        }
-        const rows = sorted.map(l => {
-            const mg = l.ventas>0 ? l.utilidad/l.ventas : 0;
-            return `<tr><td data-label="Línea"><span style="display:inline-block;width:8px;height:8px;border-radius:4px;background:${LC[l.Línea]||'#888'};margin-right:7px"></span>${l.Línea}</td><td class="r" data-label="Unidades">${fN(l.unidades)}</td><td class="r" data-label="Ventas $"><b>${fF(l.ventas)}</b></td><td class="r" data-label="Utilidad">${fF(l.utilidad)}</td><td class="r" data-label="Margen"><span class="pill ${mg>=.50?'hi':'mi'}">${fP(mg)}</span></td></tr>`;
-        }).join('');
+        Object.values(catMap).forEach(c => { lineMap[c.Línea].cats.push(c); });
+        const lineasSorted = Object.values(lineMap).sort((a,b) => b[currentLineMetric]-a[currentLineMetric]);
+        let html = '';
+        lineasSorted.forEach((l, i) => {
+            const mg  = l.ventas>0 ? l.utilidad/l.ventas : 0;
+            const rid = 'lcH'+i;
+            html += `<tr class="lc-parent" onclick="toggleLineaCat('${rid}')">
+                <td data-label="" style="text-align:right"><span class="lc-icon" id="${rid}-icon">▸</span></td>
+                <td data-label="Línea"><span style="display:inline-block;width:8px;height:8px;border-radius:4px;background:${LC[l.Línea]||'#888'};margin-right:7px"></span><b>${l.Línea}</b></td>
+                <td class="r" data-label="Unidades">${fN(l.unidades)}</td>
+                <td class="r" data-label="Ventas $"><b>${fF(l.ventas)}</b></td>
+                <td class="r" data-label="Utilidad">${fF(l.utilidad)}</td>
+                <td class="r" data-label="Margen"><span class="pill ${mg>=.40?'hi':'mi'}">${fP(mg)}</span></td>
+            </tr>`;
+            const catsSorted = l.cats.slice().sort((a,b) => b.ventas-a.ventas);
+            catsSorted.forEach(c => {
+                const cmg = c.ventas>0 ? c.utilidad/c.ventas : 0;
+                html += `<tr class="lc-child ${rid}-child" style="display:none">
+                    <td data-label=""></td>
+                    <td data-label="Categoría">${c.Categoría}</td>
+                    <td class="r" data-label="Unidades">${fN(c.unidades)}</td>
+                    <td class="r" data-label="Ventas $">${fF(c.ventas)}</td>
+                    <td class="r" data-label="Utilidad">${fF(c.utilidad)}</td>
+                    <td class="r" data-label="Margen"><span class="pill ${cmg>=.40?'hi':'mi'}">${fP(cmg)}</span></td>
+                </tr>`;
+            });
+        });
         const totalMargen = totalVentas>0 ? totalUtilidad/totalVentas : 0;
-        tbody.innerHTML = rows + `<tr class="total-row"><td data-label=""><b>TOTAL ACUMULADO</b></td><td class="r" data-label="Unidades">${fN(totalUnidades)}</td><td class="r" data-label="Ventas $">${fF(totalVentas)}</td><td class="r" data-label="Utilidad">${fF(totalUtilidad)}</td><td class="r" data-label="Margen"><span class="pill ${totalMargen>=.50?'hi':'mi'}">${fP(totalMargen)}</span></td></tr>`;
-        const maxVal = Math.max(...sorted.map(l => l[currentLineMetric]))||0;
-        document.getElementById('lineas-chart-wrap').style.height =
-            Math.max(220, sorted.length*34 + 70) + 'px';
+        tbody.innerHTML = html + `<tr class="total-row"><td data-label=""></td><td data-label=""><b>TOTAL ACUMULADO</b></td><td class="r" data-label="Unidades">${fN(totalUnidades)}</td><td class="r" data-label="Ventas $">${fF(totalVentas)}</td><td class="r" data-label="Utilidad">${fF(totalUtilidad)}</td><td class="r" data-label="Margen"><span class="pill ${totalMargen>=.40?'hi':'mi'}">${fP(totalMargen)}</span></td></tr>`;
+        // ── Gráfico de línea: tendencia mensual por categoría ──
+        const periodosOrdenados = PERIODOS.filter(p => activeMeses.has(p));
+        const catTotals = {};
+        Object.values(catMap).forEach(c => { catTotals[c.Categoría] = (catTotals[c.Categoría]||0) + c[currentLineMetric]; });
+        const TOP_N = 8;
+        const catEntries = Object.entries(catTotals).sort((a,b) => b[1]-a[1]);
+        const topCats  = catEntries.slice(0, TOP_N).map(e => e[0]);
+        const topSet   = new Set(topCats);
+        const hasOtras = catEntries.length > TOP_N;
+        const seriesNames = hasOtras ? [...topCats, 'Otras categorías'] : topCats;
+        const byPeriodCat = {};
+        seriesNames.forEach(n => byPeriodCat[n] = {});
+        filtered.forEach(r => {
+            const catName = topSet.has(r.Categoría) ? r.Categoría : (hasOtras ? 'Otras categorías' : r.Categoría);
+            if(!byPeriodCat[catName]) byPeriodCat[catName] = {};
+            byPeriodCat[catName][r.PeriodoLabel] = (byPeriodCat[catName][r.PeriodoLabel]||0) + r[currentLineMetric];
+        });
+        const isMoneda = currentLineMetric==='ventas' || currentLineMetric==='utilidad';
+        const datasets = seriesNames.map(name => {
+            const color = CATC[name] || '#888';
+            return {
+                label: name,
+                data: periodosOrdenados.map(p => byPeriodCat[name][p] || 0),
+                borderColor: color, backgroundColor: color+'15',
+                borderWidth: 2, pointRadius: 3, pointHitRadius: 16, pointHoverRadius: 5,
+                tension: 0.15, fill: false,
+            };
+        });
+        document.getElementById('lineas-chart-wrap').style.height = '320px';
         charts['lineas'] = new Chart(document.getElementById('chart-lineas'), {
-            type:'bar',
-            data:{labels:sorted.map(l=>l.Línea), datasets:[{data:sorted.map(l=>l[currentLineMetric]), backgroundColor:sorted.map(l=>LC[l.Línea]||'#888'), borderRadius:5, barThickness:14}]},
+            type:'line',
+            data:{ labels: periodosOrdenados, datasets },
             options:{
-                indexAxis:'y', responsive:true, maintainAspectRatio:false,
-                layout:{padding:{right:28}},
+                responsive:true, maintainAspectRatio:false,
+                interaction:{mode:'index', intersect:false},
                 plugins:{
-                    legend:{display:false},
-                    tooltip:{...PREMIUM_TOOLTIP_OPTS, callbacks:{label:ctx=>(currentLineMetric==='ventas'||currentLineMetric==='utilidad')?' '+fF(ctx.raw):' '+fN(ctx.raw)+' uds'}},
-                    datalabels:{display:true,anchor:'end',align:'end',color:'#2B3A42',font:{weight:'600',size:9.5},
-                        formatter:(value,ctx)=>{const t=ctx.chart.data.datasets[ctx.datasetIndex].data.reduce((a,b)=>a+b,0); return fP(t>0?value/t:0);}}
+                    legend:{display:true, position:'top', onClick:null,
+                        labels:{boxWidth:8,boxHeight:8,usePointStyle:true,pointStyle:'circle',padding:10,color:'#46626D',font:{family:"'Segoe UI', sans-serif",size:9.5,weight:'600'}}},
+                    datalabels:{display:false},
+                    tooltip:{...PREMIUM_TOOLTIP_OPTS, callbacks:{label:ctx=>` ${ctx.dataset.label}: ${isMoneda?fF(ctx.raw):fN(ctx.raw)}`}}
                 },
                 scales:{
-                    x:{grid:{display:false},border:{display:false},suggestedMax:maxVal*1.15,ticks:{font:{size:9},color:'#666666',callback:currentLineMetric==='unidades'?v=>fN(v):v=>fM(v)}},
-                    y:{grid:{display:false},border:{display:false},ticks:{font:{size:10,weight:'600'},color:'#16232B'}}
+                    x:{grid:{display:false}, ticks:{font:{size:9},color:'#666666'}},
+                    y:{grid:{color:'#EAF7FC'}, ticks:{font:{size:9},color:'#666666', callback: isMoneda ? v=>fM(v) : v=>fN(v)}}
                 }
             }
         });
@@ -1595,46 +1693,101 @@ document.addEventListener("DOMContentLoaded", function() {
     function updateLineasActual(){
         dc('lineasactual');
         const tbody    = document.getElementById('tabla-lineas-actual');
-        const filtered = getFilteredLineasActual();
-        const lineMap  = {};
+        const filtered = getFilteredCategoriasDiario();
+        if(!filtered.length){
+            tbody.innerHTML = '<tr><td colspan="6" class="empty">Selecciona sucursales para desplegar líneas.</td></tr>';
+            document.getElementById('lineasactual-chart-wrap').style.height = '220px';
+            return;
+        }
+        // ── Tabla expandible: Línea (total del mes) -> Categorías (detalle) ──
+        const catMap  = {};   // Línea|||Categoría -> totales (sumando todos los días)
+        const lineMap = {};   // Línea -> totales + lista de categorías
         let totalUnidades=0, totalVentas=0, totalUtilidad=0;
         filtered.forEach(r => {
-            if(!lineMap[r.Línea]) lineMap[r.Línea] = {Línea:r.Línea, unidades:0, ventas:0, utilidad:0};
+            const k = r.Línea + '|||' + r.Categoría;
+            if(!catMap[k]) catMap[k] = {Línea:r.Línea, Categoría:r.Categoría, unidades:0, ventas:0, utilidad:0};
+            catMap[k].unidades += r.unidades;
+            catMap[k].ventas   += r.ventas;
+            catMap[k].utilidad += r.utilidad;
+            if(!lineMap[r.Línea]) lineMap[r.Línea] = {Línea:r.Línea, unidades:0, ventas:0, utilidad:0, cats:[]};
             lineMap[r.Línea].unidades += r.unidades;
             lineMap[r.Línea].ventas   += r.ventas;
             lineMap[r.Línea].utilidad += r.utilidad;
             totalUnidades += r.unidades; totalVentas += r.ventas; totalUtilidad += r.utilidad;
         });
-        const sorted = Object.values(lineMap).sort((a,b) => b[currentLineMetricActual]-a[currentLineMetricActual]);
-        if(!sorted.length){
-            tbody.innerHTML = '<tr><td colspan="5" class="empty">Selecciona sucursales para desplegar líneas.</td></tr>';
-            document.getElementById('lineasactual-chart-wrap').style.height = '220px';
-            return;
-        }
-        const rows = sorted.map(l => {
-            const mg = l.ventas>0 ? l.utilidad/l.ventas : 0;
-            return `<tr><td data-label="Línea"><span style="display:inline-block;width:8px;height:8px;border-radius:4px;background:${LC[l.Línea]||'#888'};margin-right:7px"></span>${l.Línea}</td><td class="r" data-label="Unidades">${fN(l.unidades)}</td><td class="r" data-label="Ventas $"><b>${fF(l.ventas)}</b></td><td class="r" data-label="Utilidad">${fF(l.utilidad)}</td><td class="r" data-label="Margen"><span class="pill ${mg>=.50?'hi':'mi'}">${fP(mg)}</span></td></tr>`;
-        }).join('');
+        Object.values(catMap).forEach(c => { lineMap[c.Línea].cats.push(c); });
+        const lineasSorted = Object.values(lineMap).sort((a,b) => b[currentLineMetricActual]-a[currentLineMetricActual]);
+        let html = '';
+        lineasSorted.forEach((l, i) => {
+            const mg  = l.ventas>0 ? l.utilidad/l.ventas : 0;
+            const rid = 'lcA'+i;
+            html += `<tr class="lc-parent" onclick="toggleLineaCat('${rid}')">
+                <td data-label="" style="text-align:right"><span class="lc-icon" id="${rid}-icon">▸</span></td>
+                <td data-label="Línea"><span style="display:inline-block;width:8px;height:8px;border-radius:4px;background:${LC[l.Línea]||'#888'};margin-right:7px"></span><b>${l.Línea}</b></td>
+                <td class="r" data-label="Unidades">${fN(l.unidades)}</td>
+                <td class="r" data-label="Ventas $"><b>${fF(l.ventas)}</b></td>
+                <td class="r" data-label="Utilidad">${fF(l.utilidad)}</td>
+                <td class="r" data-label="Margen"><span class="pill ${mg>=.40?'hi':'mi'}">${fP(mg)}</span></td>
+            </tr>`;
+            const catsSorted = l.cats.slice().sort((a,b) => b.ventas-a.ventas);
+            catsSorted.forEach(c => {
+                const cmg = c.ventas>0 ? c.utilidad/c.ventas : 0;
+                html += `<tr class="lc-child ${rid}-child" style="display:none">
+                    <td data-label=""></td>
+                    <td data-label="Categoría">${c.Categoría}</td>
+                    <td class="r" data-label="Unidades">${fN(c.unidades)}</td>
+                    <td class="r" data-label="Ventas $">${fF(c.ventas)}</td>
+                    <td class="r" data-label="Utilidad">${fF(c.utilidad)}</td>
+                    <td class="r" data-label="Margen"><span class="pill ${cmg>=.40?'hi':'mi'}">${fP(cmg)}</span></td>
+                </tr>`;
+            });
+        });
         const totalMargen = totalVentas>0 ? totalUtilidad/totalVentas : 0;
-        tbody.innerHTML = rows + `<tr class="total-row"><td data-label=""><b>TOTAL MES EN CURSO</b></td><td class="r" data-label="Unidades">${fN(totalUnidades)}</td><td class="r" data-label="Ventas $">${fF(totalVentas)}</td><td class="r" data-label="Utilidad">${fF(totalUtilidad)}</td><td class="r" data-label="Margen"><span class="pill ${totalMargen>=.50?'hi':'mi'}">${fP(totalMargen)}</span></td></tr>`;
-        const maxVal = Math.max(...sorted.map(l => l[currentLineMetricActual]))||0;
-        document.getElementById('lineasactual-chart-wrap').style.height =
-            Math.max(220, sorted.length*34 + 70) + 'px';
+        tbody.innerHTML = html + `<tr class="total-row"><td data-label=""></td><td data-label=""><b>TOTAL MES EN CURSO</b></td><td class="r" data-label="Unidades">${fN(totalUnidades)}</td><td class="r" data-label="Ventas $">${fF(totalVentas)}</td><td class="r" data-label="Utilidad">${fF(totalUtilidad)}</td><td class="r" data-label="Margen"><span class="pill ${totalMargen>=.40?'hi':'mi'}">${fP(totalMargen)}</span></td></tr>`;
+        // ── Gráfico de línea: tendencia diaria por categoría ──
+        const dates = getDates();
+        const catTotals = {};
+        Object.values(catMap).forEach(c => { catTotals[c.Categoría] = (catTotals[c.Categoría]||0) + c[currentLineMetricActual]; });
+        const TOP_N = 8;
+        const catEntries = Object.entries(catTotals).sort((a,b) => b[1]-a[1]);
+        const topCats  = catEntries.slice(0, TOP_N).map(e => e[0]);
+        const topSet   = new Set(topCats);
+        const hasOtras = catEntries.length > TOP_N;
+        const seriesNames = hasOtras ? [...topCats, 'Otras categorías'] : topCats;
+        const byDateCat = {};
+        seriesNames.forEach(n => byDateCat[n] = {});
+        filtered.forEach(r => {
+            const catName = topSet.has(r.Categoría) ? r.Categoría : (hasOtras ? 'Otras categorías' : r.Categoría);
+            if(!byDateCat[catName]) byDateCat[catName] = {};
+            byDateCat[catName][r.FechaStr] = (byDateCat[catName][r.FechaStr]||0) + r[currentLineMetricActual];
+        });
+        const isMoneda = currentLineMetricActual==='ventas' || currentLineMetricActual==='utilidad';
+        const datasets = seriesNames.map(name => {
+            const color = CATC[name] || '#888';
+            return {
+                label: name,
+                data: dates.map(d => byDateCat[name][d] || 0),
+                borderColor: color, backgroundColor: color+'15',
+                borderWidth: 2, pointRadius: 2.5, pointHitRadius: 14, pointHoverRadius: 5,
+                tension: 0.15, fill: false,
+            };
+        });
+        document.getElementById('lineasactual-chart-wrap').style.height = '320px';
         charts['lineasactual'] = new Chart(document.getElementById('chart-lineasactual'), {
-            type:'bar',
-            data:{labels:sorted.map(l=>l.Línea), datasets:[{data:sorted.map(l=>l[currentLineMetricActual]), backgroundColor:sorted.map(l=>LC[l.Línea]||'#888'), borderRadius:5, barThickness:14}]},
+            type:'line',
+            data:{ labels: dates.map(d => d.slice(8)), datasets },
             options:{
-                indexAxis:'y', responsive:true, maintainAspectRatio:false,
-                layout:{padding:{right:28}},
+                responsive:true, maintainAspectRatio:false,
+                interaction:{mode:'index', intersect:false},
                 plugins:{
-                    legend:{display:false},
-                    tooltip:{...PREMIUM_TOOLTIP_OPTS, callbacks:{label:ctx=>(currentLineMetricActual==='ventas'||currentLineMetricActual==='utilidad')?' '+fF(ctx.raw):' '+fN(ctx.raw)+' uds'}},
-                    datalabels:{display:true,anchor:'end',align:'end',color:'#2B3A42',font:{weight:'600',size:9.5},
-                        formatter:(value,ctx)=>{const t=ctx.chart.data.datasets[ctx.datasetIndex].data.reduce((a,b)=>a+b,0); return fP(t>0?value/t:0);}}
+                    legend:{display:true, position:'top', onClick:null,
+                        labels:{boxWidth:8,boxHeight:8,usePointStyle:true,pointStyle:'circle',padding:10,color:'#46626D',font:{family:"'Segoe UI', sans-serif",size:9.5,weight:'600'}}},
+                    datalabels:{display:false},
+                    tooltip:{...PREMIUM_TOOLTIP_OPTS, callbacks:{label:ctx=>` ${ctx.dataset.label}: ${isMoneda?fF(ctx.raw):fN(ctx.raw)}`}}
                 },
                 scales:{
-                    x:{grid:{display:false},border:{display:false},suggestedMax:maxVal*1.15,ticks:{font:{size:9},color:'#666666',callback:currentLineMetricActual==='unidades'?v=>fN(v):v=>fM(v)}},
-                    y:{grid:{display:false},border:{display:false},ticks:{font:{size:10,weight:'600'},color:'#16232B'}}
+                    x:{grid:{display:false}, ticks:{font:{size:9},color:'#666666'}},
+                    y:{grid:{color:'#EAF7FC'}, ticks:{font:{size:9},color:'#666666', callback: isMoneda ? v=>fM(v) : v=>fN(v)}}
                 }
             }
         });
@@ -1650,10 +1803,10 @@ document.addEventListener("DOMContentLoaded", function() {
         const rows = data.map(r => {
             const mg = r.ventas>0 ? r.utilidad/r.ventas : 0;
             tUn+=r.unidades; tV+=r.ventas; tU+=r.utilidad; tTk+=r.tickets;
-            return `<tr><td data-label="Sucursal"><span style="display:inline-block;width:8px;height:8px;border-radius:4px;background:${SC[r.NombreSucursal]||'#888'};margin-right:7px"></span><b>${r.NombreSucursal}</b></td><td class="r" data-label="Unidades">${fN(r.unidades)}</td><td class="r" data-label="Ventas $"><b>${fF(r.ventas)}</b></td><td class="r" data-label="Utilidad">${fF(r.utilidad)}</td><td class="r" data-label="Margen"><span class="pill ${mg>=.50?'hi':'mi'}">${fP(mg)}</span></td><td class="r" data-label="Tickets">${fN(r.tickets)}</td></tr>`;
+            return `<tr><td data-label="Sucursal"><span style="display:inline-block;width:8px;height:8px;border-radius:4px;background:${SC[r.NombreSucursal]||'#888'};margin-right:7px"></span><b>${r.NombreSucursal}</b></td><td class="r" data-label="Unidades">${fN(r.unidades)}</td><td class="r" data-label="Ventas $"><b>${fF(r.ventas)}</b></td><td class="r" data-label="Utilidad">${fF(r.utilidad)}</td><td class="r" data-label="Margen"><span class="pill ${mg>=.40?'hi':'mi'}">${fP(mg)}</span></td><td class="r" data-label="Tickets">${fN(r.tickets)}</td></tr>`;
         }).join('');
         const totMg = tV>0 ? tU/tV : 0;
-        tbody.innerHTML = rows + `<tr class="total-row"><td data-label=""><b>TOTAL MES EN CURSO</b></td><td class="r" data-label="Unidades">${fN(tUn)}</td><td class="r" data-label="Ventas $">${fF(tV)}</td><td class="r" data-label="Utilidad">${fF(tU)}</td><td class="r" data-label="Margen"><span class="pill ${totMg>=.50?'hi':'mi'}">${fP(totMg)}</span></td><td class="r" data-label="Tickets">${fN(tTk)}</td></tr>`;
+        tbody.innerHTML = rows + `<tr class="total-row"><td data-label=""><b>TOTAL MES EN CURSO</b></td><td class="r" data-label="Unidades">${fN(tUn)}</td><td class="r" data-label="Ventas $">${fF(tV)}</td><td class="r" data-label="Utilidad">${fF(tU)}</td><td class="r" data-label="Margen"><span class="pill ${totMg>=.40?'hi':'mi'}">${fP(totMg)}</span></td><td class="r" data-label="Tickets">${fN(tTk)}</td></tr>`;
     }
     function updateChartSucursalActual(){
         dc('sucursalactual');
@@ -1762,9 +1915,9 @@ document.addEventListener("DOMContentLoaded", function() {
         const totMg = tV>0 ? tU/tV : 0;
         const rows = sorted.map(r => {
             const mg = r.ventas>0 ? r.utilidad/r.ventas : 0;
-            return `<tr><td class="date" data-label="Período">${r.PeriodoLabel}</td><td class="r" data-label="Unidades">${fN(r.unidades)}</td><td class="r" data-label="Ventas $"><b>${fF(r.ventas)}</b></td><td class="r" data-label="Utilidad">${fF(r.utilidad)}</td><td class="r" data-label="Margen"><span class="pill ${mg>=.50?'hi':'mi'}">${fP(mg)}</span></td><td class="r" data-label="Tickets"><b>${fN(r.tickets)}</b></td></tr>`;
+            return `<tr><td class="date" data-label="Período">${r.PeriodoLabel}</td><td class="r" data-label="Unidades">${fN(r.unidades)}</td><td class="r" data-label="Ventas $"><b>${fF(r.ventas)}</b></td><td class="r" data-label="Utilidad">${fF(r.utilidad)}</td><td class="r" data-label="Margen"><span class="pill ${mg>=.40?'hi':'mi'}">${fP(mg)}</span></td><td class="r" data-label="Tickets"><b>${fN(r.tickets)}</b></td></tr>`;
         }).join('');
-        tbody.innerHTML = rows + `<tr class="total-row"><td data-label=""><b>TOTAL HISTÓRICO</b></td><td class="r" data-label="Unidades">${fN(tUn)}</td><td class="r" data-label="Ventas $">${fF(tV)}</td><td class="r" data-label="Utilidad">${fF(tU)}</td><td class="r" data-label="Margen"><span class="pill ${totMg>=.50?'hi':'mi'}">${fP(totMg)}</span></td><td class="r" data-label="Tickets">${fN(tTk)}</td></tr>`;
+        tbody.innerHTML = rows + `<tr class="total-row"><td data-label=""><b>TOTAL HISTÓRICO</b></td><td class="r" data-label="Unidades">${fN(tUn)}</td><td class="r" data-label="Ventas $">${fF(tV)}</td><td class="r" data-label="Utilidad">${fF(tU)}</td><td class="r" data-label="Margen"><span class="pill ${totMg>=.40?'hi':'mi'}">${fP(totMg)}</span></td><td class="r" data-label="Tickets">${fN(tTk)}</td></tr>`;
         const activeSucs = getActiveSucs();
         const multi      = activeSucs.length > 1;
         const isMoneda   = currentHistMetric==='ventas' || currentHistMetric==='utilidad';
@@ -2044,7 +2197,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 <td class="r" data-label="Unidades">${fN(l.unidades)}</td>
                 <td class="r" data-label="Ventas $"><b>${fF(l.ventas)}</b></td>
                 <td class="r" data-label="Utilidad">${fF(l.utilidad)}</td>
-                <td class="r" data-label="Margen"><span class="pill ${mg>=.50?'hi':'mi'}">${fP(mg)}</span></td>
+                <td class="r" data-label="Margen"><span class="pill ${mg>=.40?'hi':'mi'}">${fP(mg)}</span></td>
             </tr>`;
             const catsSorted = l.cats.slice().sort((a,b) => b.ventas-a.ventas);
             catsSorted.forEach(c => {
@@ -2055,7 +2208,7 @@ document.addEventListener("DOMContentLoaded", function() {
                     <td class="r" data-label="Unidades">${fN(c.unidades)}</td>
                     <td class="r" data-label="Ventas $">${fF(c.ventas)}</td>
                     <td class="r" data-label="Utilidad">${fF(c.utilidad)}</td>
-                    <td class="r" data-label="Margen"><span class="pill ${cmg>=.50?'hi':'mi'}">${fP(cmg)}</span></td>
+                    <td class="r" data-label="Margen"><span class="pill ${cmg>=.40?'hi':'mi'}">${fP(cmg)}</span></td>
                 </tr>`;
             });
         });
@@ -2229,7 +2382,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 <td data-label="Cuartil"><span class="fq-badge" style="background:${qc.bg};color:${qc.fg}">${QUART_LABELS[q]}</span>
                     <span style="color:#666666;font-size:.68rem;margin-left:6px;display:block;text-align:left;margin-top:4px">${items.length} fabricante${items.length!==1?'s':''} · ${fP(startPct)}–${fP(endPct)} acumulado</span></td>
                 <td class="r" data-label="Ventas $"><b>${fF(qVentas)}</b></td>
-                <td class="r" data-label="Margen"><span class="pill ${qMg>=.50?'hi':'mi'}">${fP(qMg)}</span></td>
+                <td class="r" data-label="Margen"><span class="pill ${qMg>=.40?'hi':'mi'}">${fP(qMg)}</span></td>
                 <td class="r" data-label="% Participación"><b>${fP(qPct)}</b></td>
             </tr>`;
             items.forEach((f, idx) => {
@@ -2239,7 +2392,7 @@ document.addEventListener("DOMContentLoaded", function() {
                     <td class="fab-rank-num" data-label="#" style="text-align:right">${idx+1}</td>
                     <td data-label="Fabricante">${f.Fabricante}</td>
                     <td class="r fab-bar-cell" data-label="Ventas $"><span class="fab-bar-bg" style="width:${barW}%;background:${qc.bg}22"></span><b>${fF(f.ventas)}</b></td>
-                    <td class="r" data-label="Margen"><span class="pill ${mg>=.50?'hi':'mi'}">${fP(mg)}</span></td>
+                    <td class="r" data-label="Margen"><span class="pill ${mg>=.40?'hi':'mi'}">${fP(mg)}</span></td>
                     <td class="r" data-label="% Participación">${fP(f.pct)}</td>
                 </tr>`;
             });
@@ -2308,14 +2461,14 @@ document.addEventListener("DOMContentLoaded", function() {
         const rows = valid.map(d => {
             const r  = byDate[d];
             const mg = r.ventas>0 ? r.utilidad/r.ventas : 0;
-            const pill = mg>=.50 ? 'hi' : 'mi';
+            const pill = mg>=.40 ? 'hi' : 'mi';
             const dn = DAYS[new Date(d+'T12:00:00').getDay()];
             const mAbr = MESES_ABR[parseInt(d.slice(5,7),10)-1];
             tUn+=r.unidades; tV+=r.ventas; tU+=r.utilidad; tTk+=r.tickets;
             return `<tr><td class="date" data-label="Fecha">${d.slice(8)} ${mAbr}</td><td class="dayname" data-label="Día">${dn}</td><td class="r" data-label="Unidades">${fN(r.unidades)}</td><td class="r" data-label="Ventas $"><b>${fF(r.ventas)}</b></td><td class="r" data-label="Utilidad">${fF(r.utilidad)}</td><td class="r" data-label="Margen"><span class="pill ${pill}">${fP(mg)}</span></td><td class="r" data-label="Tickets"><b>${fN(r.tickets)}</b></td></tr>`;
         }).join('');
         const totMg = tV>0 ? tU/tV : 0;
-        tbody.innerHTML = rows + `<tr class="total-row"><td data-label="" colspan="2"><b>TOTAL ${info.label.toUpperCase()} ${info.anio}</b></td><td class="r" data-label="Unidades">${fN(tUn)}</td><td class="r" data-label="Ventas $">${fF(tV)}</td><td class="r" data-label="Utilidad">${fF(tU)}</td><td class="r" data-label="Margen"><span class="pill ${totMg>=.50?'hi':'mi'}">${fP(totMg)}</span></td><td class="r" data-label="Tickets">${fN(tTk)}</td></tr>`;
+        tbody.innerHTML = rows + `<tr class="total-row"><td data-label="" colspan="2"><b>TOTAL ${info.label.toUpperCase()} ${info.anio}</b></td><td class="r" data-label="Unidades">${fN(tUn)}</td><td class="r" data-label="Ventas $">${fF(tV)}</td><td class="r" data-label="Utilidad">${fF(tU)}</td><td class="r" data-label="Margen"><span class="pill ${totMg>=.40?'hi':'mi'}">${fP(totMg)}</span></td><td class="r" data-label="Tickets">${fN(tTk)}</td></tr>`;
         const activeSucs = getActiveSucs();
         const multi      = activeSucs.length > 1;
         updateChartGeneric('resumen-'+slug+'-ventas',  'ventas',  data, valid, byDate, activeSucs, multi);
@@ -2344,6 +2497,7 @@ document.addEventListener("DOMContentLoaded", function() {
     html = html.replace("__LINEAS_CAT_JSON__",        lineas_cat_json)
     html = html.replace("__FABRICANTES_JSON__",       fabricantes_json)
     html = html.replace("__PRESUPUESTO_JSON__",       presupuesto_json)
+    html = html.replace("__CATEGORIAS_DIARIO_JSON__", categorias_diario_json)
     html = html.replace("__PERIODOS_JSON__",          periodos_json)
     html = html.replace("__SUCURSALES_JSON__",        sucursales_json)
     html = html.replace("__CURRENT_PERIOD_JSON__",    current_period_json)
@@ -2394,11 +2548,14 @@ def main():
         # curso real (p.ej. agosto), por lo que días transcurridos/operativos
         # y el pronóstico de cierre no se contaminan con ventas de julio.
         presupuesto_agg = procesar_presupuesto(agg, objetivos_df, suc, FECHA_BASE)
+        # Ventas diarias por Línea/Categoría del mes en curso, para graficar
+        # la tendencia día a día en 'Resumen Mes Actual'.
+        categorias_diario_agg = procesar_categorias_diario(vmc_actual, art_dim, suc, BOL_EXCLUIR)
         print("Generando HTML final...")
         fecha_reporte, fecha_info, mes_header = formatear_fechas(FECHA_BASE)
         current_period_label = periodo_label_actual(FECHA_BASE)
         html = generar_html(agg, linea_agg, historico_agg, top_art_agg, lineas_cat_agg, fabricantes_agg,
-                            presupuesto_agg, lista_sucursales, fecha_reporte, fecha_info, mes_header,
+                            presupuesto_agg, categorias_diario_agg, lista_sucursales, fecha_reporte, fecha_info, mes_header,
                             current_period_label, resumenes_anteriores)
         Path(OUTPUT_PATH).write_text(html, encoding="utf-8")
         print(f"✅ Dashboard generado exitosamente en: {OUTPUT_PATH}")
