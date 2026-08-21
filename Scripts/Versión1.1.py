@@ -1,6 +1,7 @@
 import json
 import calendar
 import unicodedata
+import base64
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -10,6 +11,10 @@ EXCEL_PATH  = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentas
 OUTPUT_PATH = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/08_Agosto/21-08-2026/index.html"
 BOL_EXCLUIR = ["BOLEUCH", "BOLEUGDE", "BOLEUMIN"]
 FECHA_BASE  = date(2026, 8, 21)
+# Logo del header (opcional). Debe ser un PNG con fondo transparente. Si el
+# archivo no existe en esta ruta, el logo simplemente se omite (el header se
+# ve igual que antes, sin logo) y el script no se interrumpe.
+LOGO_PATH = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/Logos/logo.png"
 # Lógica de procesamiento
 MESES_ES = ["enero","febrero","marzo","abril","mayo","junio",
             "julio","agosto","septiembre","octubre","noviembre","diciembre"]
@@ -46,6 +51,17 @@ def _detectar_columna(df, patron: str):
         if patron_norm in _normalizar_texto(c):
             return c
     return None
+def _cargar_imagen_b64(path: str) -> str:
+    """Carga una imagen (p.ej. el logo del header) y la codifica en base64
+    para incrustarla directamente en el HTML, sin depender de un archivo
+    externo que viaje junto al reporte. Si el archivo no existe, retorna
+    cadena vacía y el <img> del header simplemente no se muestra (no rompe
+    la generación del dashboard)."""
+    p = Path(path)
+    if not p.exists():
+        print(f"⚠️  No se encontró el logo en {path}; se omite del header.")
+        return ""
+    return base64.b64encode(p.read_bytes()).decode("utf-8")
 def formatear_fechas(base: date):
     ayer = base - timedelta(days=1)
     fecha_reporte = f"{base.day} de {MESES_ES[base.month-1].capitalize()} de {base.year}"
@@ -473,6 +489,7 @@ def generar_html(agg, linea_agg, historico_agg, top_art_agg, lineas_cat_agg, fab
     categorias_diario_json = json.dumps(categorias_diario_agg.to_dict("records"), ensure_ascii=False)
     sucursales_json   = json.dumps(lista_sucursales,                  ensure_ascii=False)
     current_period_json = json.dumps(current_period_label,            ensure_ascii=False)
+    logo_b64 = _cargar_imagen_b64(LOGO_PATH)
     periodos_unicos = (
         historico_agg[["Año","MesNum","PeriodoLabel"]]
         .drop_duplicates()
@@ -493,10 +510,13 @@ def generar_html(agg, linea_agg, historico_agg, top_art_agg, lineas_cat_agg, fab
 *{box-sizing:border-box;margin:0;padding:0}
 html{font-size:clamp(13px, 4vw, 16px)}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:#EFF8FC;color:#16232B;min-height:100vh}
-header{background:#00B0F0;padding:1.2rem 2rem;display:flex;align-items:center;justify-content:space-between;box-shadow:0 3px 20px rgba(0,176,240,0.2)}
+header{background:#00B0F0;padding:1.2rem 2rem;display:grid;grid-template-columns:1fr auto 1fr;column-gap:1rem;align-items:center;box-shadow:0 3px 20px rgba(0,176,240,0.2)}
+.header-left{min-width:0}
 .header-left h1{font-size:1.15rem;font-weight:700;color:#fff;letter-spacing:.03em}
 .header-left p{font-size:.72rem;color:#EAF8FF;margin-top:4px;letter-spacing:0.02em}
-.header-right{display:flex;flex-direction:column;align-items:flex-end;gap:.35rem}
+.header-right{display:flex;flex-direction:column;align-items:flex-end;gap:.35rem;min-width:0}
+.header-logo{display:flex;align-items:center;justify-content:center;min-width:0}
+.header-logo img{height:5.4rem;width:auto;display:block}
 .hbadge{background:#ffffff1f;border:1px solid #ffffff40;color:#fff;font-size:.68rem;font-weight:600;padding:4px 14px;border-radius:20px;letter-spacing:.05em}
 .hdate{font-size:.72rem;color:#EAF8FF;font-weight:500}
 .filter-bar{background:#fff;border-bottom:1px solid #D9EEF7;padding:.75rem 2rem;display:flex;gap:.8rem;flex-wrap:wrap;align-items:center;justify-content:center;box-shadow:0 2px 4px rgba(0,176,240,0.02)}
@@ -627,6 +647,8 @@ tr.fq-parent td{padding-top:10px;padding-bottom:10px}
   .btn-all{padding:4px 10px;font-size:.6rem}
   .suc-sep{height:14px}
   .tab-nav-btn{padding:.7rem .9rem;font-size:.74rem}
+  header{column-gap:.5rem;padding:1rem 1rem}
+  .header-logo img{height:3.6rem}
 }
 </style>
 </head>
@@ -637,6 +659,7 @@ tr.fq-parent td{padding-top:10px;padding-bottom:10px}
     <p><strong>Período __MES_HEADER__</strong></p>
     <p>Elaborado con información al día __FECHA_INFO__</p>
   </div>
+  <div class="header-logo"><img src="data:image/png;base64,__LOGO_B64__" alt="Aromania"></div>
   <div class="header-right">
     <span class="hdate">Reporte Generado: __FECHA_VALOR__</span>
     <div class="hbadge">DASHBOARD v1.1</div>
@@ -1126,15 +1149,6 @@ document.addEventListener("DOMContentLoaded", function() {
             wrap.appendChild(btn);
         });
     }
-    // ── Recalcula disponibilidad cruzada y desmarca automáticamente las
-    // selecciones sin datos, al estilo de los segmentadores de Excel. Los
-    // botones sin datos se QUITAN del layout (display:none), no sólo se
-    // atenúan, para que el segmentador muestre únicamente lo disponible.
-    // El criterio de "tiene datos" depende de la pestaña activa: en
-    // 'resumenactual' (Resumen Mes en Curso) se basa en RAW (venta real del
-    // mes en curso, ya que esa pestaña no usa el segmentador de meses);
-    // en el resto de pestañas con histórico, se basa en HISTORICO cruzado
-    // contra los meses actualmente seleccionados. ──
     function refreshSucursalesDisponibilidad(){
         let cambio = false;
         const criterioMesActual = (currentTab === 'resumenactual');
@@ -2504,6 +2518,7 @@ document.addEventListener("DOMContentLoaded", function() {
     html = html.replace("__TABS_NAV_EXTRA__",         tabs_nav_extra)
     html = html.replace("__TABS_CONTENT_EXTRA__",     tabs_content_extra)
     html = html.replace("__RESUMENES_ANT_JSON__",     resumenes_ant_json)
+    html = html.replace("__LOGO_B64__",               logo_b64)
     return html
 def main():
     try:
