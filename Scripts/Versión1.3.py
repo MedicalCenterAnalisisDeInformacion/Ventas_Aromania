@@ -7,15 +7,13 @@ import pandas as pd
 import numpy as np
 from datetime import date, timedelta
 # Ajustar rutas y el párametro
-EXCEL_PATH  = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/08_Agosto/24-08-2026/Dataset.xlsx"
-OUTPUT_PATH = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/08_Agosto/24-08-2026/index.html"
+EXCEL_PATH  = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/08_Agosto/28-08-2026/Dataset.xlsx"
+OUTPUT_PATH = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/08_Agosto/28-08-2026/index.html"
 BOL_EXCLUIR = ["BOLEUCH", "BOLEUGDE", "BOLEUMIN"]
-FECHA_BASE  = date(2026, 8, 24)
-# Logo del header (opcional). Debe ser un PNG con fondo transparente. Si el
-# archivo no existe en esta ruta, el logo simplemente se omite (el header se
-# ve igual que antes, sin logo) y el script no se interrumpe.
+FECHA_BASE  = date(2026, 8, 28)
+
 LOGO_PATH = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/Logos/logo.png"
-# Lógica de procesamiento
+
 MESES_ES = ["enero","febrero","marzo","abril","mayo","junio",
             "julio","agosto","septiembre","octubre","noviembre","diciembre"]
 DIAS_ES  = ["lunes","martes","miércoles","jueves","viernes","sábado","domingo"]
@@ -510,6 +508,7 @@ def generar_html(agg, linea_agg, historico_agg, top_art_agg, lineas_cat_agg, fab
 *{box-sizing:border-box;margin:0;padding:0}
 html{font-size:clamp(13px, 4vw, 16px)}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:#EFF8FC;color:#16232B;min-height:100vh}
+.sticky-header{position:sticky;top:0;z-index:1000;isolation:isolate}
 header{background:#00B0F0;padding:1.2rem 2rem;display:grid;grid-template-columns:1fr auto 1fr;column-gap:1rem;align-items:center;box-shadow:0 3px 20px rgba(0,176,240,0.2)}
 .header-left{min-width:0}
 .header-left h1{font-size:1.15rem;font-weight:700;color:#fff;letter-spacing:.03em}
@@ -522,6 +521,7 @@ header{background:#00B0F0;padding:1.2rem 2rem;display:grid;grid-template-columns
 .filter-bar{background:#fff;border-bottom:1px solid #D9EEF7;padding:.75rem 2rem;display:flex;gap:.8rem;flex-wrap:wrap;align-items:center;justify-content:center;box-shadow:0 2px 4px rgba(0,176,240,0.02)}
 .filter-bar + .filter-bar{border-top:1px solid #EAF7FC;box-shadow:none}
 .suc-label{font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#00B0F0;margin-right:.25rem;white-space:nowrap}
+.suc-hint{font-size:.62rem;color:#7EA9BC;font-weight:500;white-space:nowrap;margin-right:.4rem}
 .suc-btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
 .suc-btn{display:inline-flex;align-items:center;padding:6px 13px;border-radius:20px;border:1px solid #D2ECF5;background:#E3F5FC;color:#46626D;font-size:.72rem;font-weight:600;cursor:pointer;transition:all .2s;font-family:inherit;white-space:nowrap}
 .suc-btn.active{background:#00B0F0 !important;border-color:#00B0F0 !important;color:#fff !important;font-weight:700;box-shadow:0 3px 10px rgba(0,176,240,0.2)}
@@ -642,6 +642,7 @@ tr.fq-parent td{padding-top:10px;padding-bottom:10px}
   .top-kpi .kpi-value.kv-txt{font-size:clamp(.6rem, 2.9vw, .85rem) !important}
   .filter-bar{padding:.5rem .75rem;gap:.4rem}
   .suc-label{font-size:.6rem;margin-right:0}
+  .suc-hint{display:none}
   .suc-btns{gap:4px}
   .suc-btn,.mes-btn{padding:3px 8px;font-size:.6rem}
   .btn-all{padding:4px 10px;font-size:.6rem}
@@ -653,6 +654,7 @@ tr.fq-parent td{padding-top:10px;padding-bottom:10px}
 </style>
 </head>
 <body>
+<div class="sticky-header">
 <header>
   <div class="header-left">
     <h1>Aromania — Análisis de Ventas</h1>
@@ -662,7 +664,7 @@ tr.fq-parent td{padding-top:10px;padding-bottom:10px}
   <div class="header-logo"><img src="data:image/png;base64,__LOGO_B64__" alt="Aromania"></div>
   <div class="header-right">
     <span class="hdate">Reporte Generado: __FECHA_VALOR__</span>
-    <div class="hbadge">DASHBOARD v1.1</div>
+    <div class="hbadge">DASHBOARD v1.3</div>
   </div>
 </header>
 <div class="filter-bar" id="filter-bar-suc">
@@ -670,6 +672,7 @@ tr.fq-parent td{padding-top:10px;padding-bottom:10px}
   <div class="suc-btns" id="suc-btns"></div>
   <div class="suc-sep"></div>
   <button class="btn-all" onclick="toggleAll()">Todas / Ninguna</button>
+  <span class="suc-hint">Clic: selección única · Ctrl/⌘ + clic: selección múltiple</span>
 </div>
 <div class="filter-bar" id="filter-bar-mes">
   <span class="suc-label" style="color:#14323D">Meses · Histórico</span>
@@ -684,6 +687,7 @@ tr.fq-parent td{padding-top:10px;padding-bottom:10px}
   <button class="tab-nav-btn"        id="tabnav-toparticulos" onclick="switchTab('toparticulos')">Top 10 Artículos</button>
   <button class="tab-nav-btn"        id="tabnav-lineascategoria" onclick="switchTab('lineascategoria')">Líneas y Categorías</button>
   <button class="tab-nav-btn"        id="tabnav-fabricantes" onclick="switchTab('fabricantes')">Fabricantes</button>
+</div>
 </div>
 <div id="tab-objetivos" class="tab-content active">
 <div class="main">
@@ -1042,7 +1046,26 @@ document.addEventListener("DOMContentLoaded", function() {
     let SC = {};
     const DAYS = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     let active      = new Set(SUCS);
+    // 'activeWanted' recuerda la selección de sucursales que el usuario
+    // realmente eligió (vía clic o Ctrl/Cmd+clic), independientemente de si
+    // el contexto de la pestaña actual la oculta temporalmente (p.ej. una
+    // sucursal sin venta en el mes en curso se oculta en 'Resumen Mes
+    // Actual', pero sigue teniendo histórico). Al cambiar de pestaña,
+    // 'active' se recalcula a partir de 'activeWanted' según lo que sea
+    // válido en el nuevo contexto, para no perder selecciones por el sólo
+    // hecho de cambiar de pestaña.
+    let activeWanted = new Set(SUCS);
     let activeMeses = new Set(PERIODOS);
+    // ── Flags de "selección exclusiva deliberada" por eje ──
+    // true = el usuario fijó, con un clic simple, UN solo elemento en ese
+    // eje (y sigue así). false = el eje está en estado "amplio" (varios
+    // elementos, sea por selección múltiple o por auto-expansión previa).
+    // Se usan para decidir si, al hacer clic exclusivo en el OTRO eje, se
+    // debe auto-expandir (eje amplio) o respetar la selección puntual
+    // existente (eje con selección exclusiva y aún válida) — así es posible
+    // combinar 1 sucursal + 1 mes sin que un clic sobrescriba al otro.
+    let sucursalExclusiva = false;
+    let mesExclusivo = false;
     let charts      = {};
     let currentLineMetric = 'ventas';
     let currentLineMetricActual = 'ventas';
@@ -1099,7 +1122,7 @@ document.addEventListener("DOMContentLoaded", function() {
         // El criterio de "qué sucursal tiene datos" depende de la pestaña:
         // en 'resumenactual' se basa en el mes en curso (RAW); en el resto,
         // en los meses históricos seleccionados. Se recalcula al entrar.
-        if(usaSucursales) refreshSucursalesDisponibilidad();
+        if(usaSucursales) refreshSucursalesDisponibilidad(false, true);
         if (tab === 'resumenactual') { update(); updateResumenActualExtra(); }
         if (tab === 'resumenacumulado') updateAcumulado();
         if (tab === 'objetivos') updateObjetivos();
@@ -1118,11 +1141,44 @@ document.addEventListener("DOMContentLoaded", function() {
             btn.className = 'suc-btn active';
             btn.dataset.sucursal = s;
             btn.innerHTML = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${SC[s]};margin-right:6px;flex-shrink:0"></span>${s}`;
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', (ev) => {
                 if(btn.disabled) return;
-                if(active.has(s)){ active.delete(s); btn.classList.remove('active'); }
-                else { active.add(s); btn.classList.add('active'); }
-                refreshMesesDisponibilidad();
+                const multi = ev.ctrlKey || ev.metaKey || ev.shiftKey;
+                if(multi){
+                    if(active.has(s)){ active.delete(s); activeWanted.delete(s); btn.classList.remove('active'); }
+                    else { active.add(s); activeWanted.add(s); btn.classList.add('active'); }
+                    sucursalExclusiva = false; // ya no es "un solo elemento elegido"
+                    refreshMesesDisponibilidad(false); // Ctrl/Cmd+clic: sólo filtra, nunca expande
+                } else {
+                    // Estilo segmentador de Excel: un clic simple selecciona
+                    // ÚNICAMENTE ese elemento, sin importar cuántos había
+                    // activos antes. Para selección múltiple se requiere
+                    // Ctrl/Cmd (o Shift) + clic.
+                    active.clear();
+                    activeWanted.clear();
+                    active.add(s);
+                    activeWanted.add(s);
+                    document.querySelectorAll('#suc-btns .suc-btn').forEach(b => {
+                        b.classList.toggle('active', b.dataset.sucursal === s);
+                    });
+                    sucursalExclusiva = true;
+                    // Primero se filtra siempre (oculta/desmarca meses
+                    // inválidos para esta sucursal).
+                    refreshMesesDisponibilidad(false);
+                    // ¿Auto-expandir a TODOS los meses válidos? Sólo si el
+                    // eje de meses NO tenía una selección exclusiva propia
+                    // (mesExclusivo=false, estado "amplio"), o si el mes que
+                    // el usuario había fijado dejó de ser válido para esta
+                    // sucursal (activeMeses quedó vacío tras el filtro). Si
+                    // el usuario ya había fijado un mes y sigue siendo
+                    // válido, se respeta tal cual — así es posible combinar
+                    // 1 sucursal + 1 mes sin que se sobrescriban entre sí.
+                    const debeExpandirMeses = !mesExclusivo || activeMeses.size === 0;
+                    if(debeExpandirMeses){
+                        refreshMesesDisponibilidad(true);
+                        mesExclusivo = false; // resultado de auto-expansión, no de elección del usuario
+                    }
+                }
                 updateAll();
             });
             wrap.appendChild(btn);
@@ -1136,11 +1192,44 @@ document.addEventListener("DOMContentLoaded", function() {
             btn.className = 'mes-btn active';
             btn.textContent = p;
             btn.dataset.periodo = p;
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', (ev) => {
                 if(btn.disabled) return;
-                if(activeMeses.has(p)){ activeMeses.delete(p); btn.classList.remove('active'); }
-                else { activeMeses.add(p); btn.classList.add('active'); }
-                refreshSucursalesDisponibilidad();
+                const multi = ev.ctrlKey || ev.metaKey || ev.shiftKey;
+                if(multi){
+                    if(activeMeses.has(p)){ activeMeses.delete(p); btn.classList.remove('active'); }
+                    else { activeMeses.add(p); btn.classList.add('active'); }
+                    mesExclusivo = false; // ya no es "un solo elemento elegido"
+                    refreshSucursalesDisponibilidad(false); // Ctrl/Cmd+clic: sólo filtra, nunca expande
+                } else {
+                    // Mismo comportamiento estilo Excel que en sucursales:
+                    // clic simple = selección exclusiva de ese mes.
+                    activeMeses.clear();
+                    activeMeses.add(p);
+                    document.querySelectorAll('#mes-btns .mes-btn').forEach(b => {
+                        b.classList.toggle('active', b.dataset.periodo === p);
+                    });
+                    mesExclusivo = true;
+                    // Primero se filtra siempre (oculta/desmarca sucursales
+                    // inválidas para este mes).
+                    refreshSucursalesDisponibilidad(false);
+                    // ¿Auto-expandir a TODAS las sucursales válidas? Sólo si
+                    // el eje de sucursales NO tenía una selección exclusiva
+                    // propia (sucursalExclusiva=false, estado "amplio"), o
+                    // si la sucursal fijada dejó de ser válida para este mes
+                    // (active quedó vacío tras el filtro). Si el usuario ya
+                    // había fijado una sucursal y sigue siendo válida, se
+                    // respeta tal cual — permitiendo combinar 1 sucursal +
+                    // 1 mes sin que se sobrescriban entre sí. Esto también
+                    // conserva el comportamiento de "crecimiento": si el eje
+                    // de sucursales estaba amplio (varias/todas), al moverse
+                    // a un mes con más sucursales disponibles (p.ej. nuevas
+                    // aperturas), esas se auto-agregan.
+                    const debeExpandirSucursales = !sucursalExclusiva || active.size === 0;
+                    if(debeExpandirSucursales){
+                        refreshSucursalesDisponibilidad(true);
+                        sucursalExclusiva = false; // resultado de auto-expansión, no de elección del usuario
+                    }
+                }
                 if(currentTab === 'resumenacumulado') updateAcumulado();
                 if(currentTab === 'toparticulos') updateTopArticulos();
                 if(currentTab === 'lineascategoria') updateLineasCategoria();
@@ -1149,7 +1238,7 @@ document.addEventListener("DOMContentLoaded", function() {
             wrap.appendChild(btn);
         });
     }
-    function refreshSucursalesDisponibilidad(){
+    function refreshSucursalesDisponibilidad(autoSeleccionar, restaurarDesdeMemoria){
         let cambio = false;
         const criterioMesActual = (currentTab === 'resumenactual');
         document.querySelectorAll('#suc-btns .suc-btn').forEach(btn => {
@@ -1168,14 +1257,26 @@ document.addEventListener("DOMContentLoaded", function() {
             btn.disabled = !esValida;
             btn.classList.toggle('oculto', !esValida);
             if(!esValida && active.has(s)){
+                // Se desactiva porque el contexto actual no la admite (p.ej.
+                // sin venta en el mes en curso dentro de 'Resumen Mes
+                // Actual'). NO se borra de 'activeWanted': si se vuelve a un
+                // contexto donde sí es válida, se restaura sola.
                 active.delete(s);
                 btn.classList.remove('active');
                 cambio = true;
+            } else if(esValida && !active.has(s)){
+                const debeActivar = autoSeleccionar || (restaurarDesdeMemoria && activeWanted.has(s));
+                if(debeActivar){
+                    active.add(s);
+                    activeWanted.add(s);
+                    btn.classList.add('active');
+                    cambio = true;
+                }
             }
         });
         return cambio;
     }
-    function refreshMesesDisponibilidad(){
+    function refreshMesesDisponibilidad(autoSeleccionar){
         let cambio = false;
         document.querySelectorAll('#mes-btns .mes-btn').forEach(btn => {
             const p = btn.dataset.periodo;
@@ -1191,6 +1292,10 @@ document.addEventListener("DOMContentLoaded", function() {
                 activeMeses.delete(p);
                 btn.classList.remove('active');
                 cambio = true;
+            } else if(esValido && autoSeleccionar && !activeMeses.has(p)){
+                activeMeses.add(p);
+                btn.classList.add('active');
+                cambio = true;
             }
         });
         return cambio;
@@ -1200,10 +1305,11 @@ document.addEventListener("DOMContentLoaded", function() {
         const seleccionables = btns.filter(b => !b.disabled);
         const todasActivas = seleccionables.length>0 && seleccionables.every(b => b.classList.contains('active'));
         if(todasActivas){
-            seleccionables.forEach(b => { active.delete(b.dataset.sucursal); b.classList.remove('active'); });
+            seleccionables.forEach(b => { active.delete(b.dataset.sucursal); activeWanted.delete(b.dataset.sucursal); b.classList.remove('active'); });
         } else {
-            seleccionables.forEach(b => { active.add(b.dataset.sucursal); b.classList.add('active'); });
+            seleccionables.forEach(b => { active.add(b.dataset.sucursal); activeWanted.add(b.dataset.sucursal); b.classList.add('active'); });
         }
+        sucursalExclusiva = false; // acción masiva: ya no es "un solo elemento elegido"
         refreshMesesDisponibilidad();
         updateAll();
     };
@@ -1216,6 +1322,7 @@ document.addEventListener("DOMContentLoaded", function() {
         } else {
             seleccionables.forEach(b => { activeMeses.add(b.dataset.periodo); b.classList.add('active'); });
         }
+        mesExclusivo = false; // acción masiva: ya no es "un solo elemento elegido"
         refreshSucursalesDisponibilidad();
         if(currentTab === 'resumenacumulado') updateAcumulado();
         if(currentTab === 'toparticulos') updateTopArticulos();
