@@ -7,12 +7,12 @@ import pandas as pd
 import numpy as np
 from datetime import date, timedelta
 # Ajustar rutas y el párametro
-EXCEL_PATH  = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/09_Septiembre/01-09-2026/Dataset.xlsx"
-OUTPUT_PATH = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/09_Septiembre/01-09-2026/index.html"
+EXCEL_PATH  = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/09_Septiembre/11-09-2026/Dataset.xlsx"
+OUTPUT_PATH = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/09_Septiembre/11-09-2026/index.html"
 BOL_EXCLUIR = ["BOLEUCH", "BOLEUGDE", "BOLEUMIN"]
-FECHA_BASE  = date(2026, 8, 31)
+FECHA_BASE  = date(2026, 9, 11)
+ES_CIERRE_MES = False
 
-ES_CIERRE_MES = True
 LOGO_PATH = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/Logos/logo.png"
 MESES_ES = ["enero","febrero","marzo","abril","mayo","junio",
             "julio","agosto","septiembre","octubre","noviembre","diciembre"]
@@ -60,11 +60,11 @@ def _cargar_imagen_b64(path: str) -> str:
         print(f"⚠️  No se encontró el logo en {path}; se omite del header.")
         return ""
     return base64.b64encode(p.read_bytes()).decode("utf-8")
-def formatear_fechas(base: date):
-    ayer = base - timedelta(days=1)
+def formatear_fechas(base: date, es_cierre: bool = False):
+    ultimo_dia_dato = base if es_cierre else base - timedelta(days=1)
     fecha_reporte = f"{base.day} de {MESES_ES[base.month-1].capitalize()} de {base.year}"
-    dia_semana    = DIAS_ES[ayer.weekday()].capitalize()
-    fecha_info    = f"{dia_semana}, {ayer.day} de {MESES_ES[ayer.month-1]} de {ayer.year}"
+    dia_semana    = DIAS_ES[ultimo_dia_dato.weekday()].capitalize()
+    fecha_info    = f"{dia_semana}, {ultimo_dia_dato.day} de {MESES_ES[ultimo_dia_dato.month-1]} de {ultimo_dia_dato.year}"
     mes_header    = MESES_ES[base.month-1].capitalize()
     return fecha_reporte, fecha_info, mes_header
 def periodo_label_actual(base: date) -> str:
@@ -2661,17 +2661,12 @@ def main():
         suc = dim[["Clave sucursal","Nombre de sucursal"]].dropna().drop_duplicates()
         suc.columns = ["ClaveSucursal","NombreSucursal"]
         suc["ClaveSucursal"] = pd.to_numeric(suc["ClaveSucursal"], errors="coerce").fillna(0).astype(int)
-        # Los segmentadores de sucursal (botones) se ordenan por FechaApertura
-        # (de más antigua a más reciente); las sucursales sin esa fecha se
-        # colocan al final, ordenadas por ClaveSucursal (ID) ascendente.
         lista_sucursales = ordenar_sucursales_por_apertura(suc, objetivos_df)
         art     = dim[["Artículo","Línea"]].dropna().drop_duplicates("Artículo")
         art_dim = dim[["Artículo","Línea","Categoría","Descripción","Fabricante"]].dropna(subset=["Artículo"]).drop_duplicates("Artículo")
         print("Procesando datos...")
-        # ── Separar VentasMesCurso: a inicios de mes puede traer mezcladas
-        # ventas del mes que ya cerró junto con las del mes en curso. ──
         vmc_actual, meses_anteriores = separar_mes_actual_anterior(vmc, FECHA_BASE)
-        agg = procesar_mes_curso(vmc_actual, suc, BOL_EXCLUIR)  # SOLO mes en curso real
+        agg = procesar_mes_curso(vmc_actual, suc, BOL_EXCLUIR)
         resumenes_anteriores = []
         for info in meses_anteriores:
             agg_ant = procesar_mes_curso(info["df"], suc, BOL_EXCLUIR)
@@ -2683,18 +2678,10 @@ def main():
         top_art_agg     = procesar_top_articulos(vm, art_dim, suc, BOL_EXCLUIR)
         lineas_cat_agg  = procesar_lineas_categoria(vm, art_dim, suc, BOL_EXCLUIR)
         fabricantes_agg = procesar_fabricantes(vm, art_dim, suc, BOL_EXCLUIR)
-        # El pronóstico vs. presupuesto usa 'agg', que ya sólo trae el mes en
-        # curso real (p.ej. agosto), por lo que días transcurridos/operativos
-        # y el pronóstico de cierre no se contaminan con ventas de julio.
-        # 'es_cierre=ES_CIERRE_MES' controla si FECHA_BASE se toma como
-        # último día YA incluido en los datos (cierre de mes) o como "hoy"
-        # con datos completos sólo hasta ayer (corrida diaria normal).
         presupuesto_agg = procesar_presupuesto(agg, objetivos_df, suc, FECHA_BASE, es_cierre=ES_CIERRE_MES)
-        # Ventas diarias por Línea/Categoría del mes en curso, para graficar
-        # la tendencia día a día en 'Resumen Mes Actual'.
         categorias_diario_agg = procesar_categorias_diario(vmc_actual, art_dim, suc, BOL_EXCLUIR)
         print("Generando HTML final...")
-        fecha_reporte, fecha_info, mes_header = formatear_fechas(FECHA_BASE)
+        fecha_reporte, fecha_info, mes_header = formatear_fechas(FECHA_BASE, es_cierre=ES_CIERRE_MES)
         current_period_label = periodo_label_actual(FECHA_BASE)
         html = generar_html(agg, linea_agg, historico_agg, top_art_agg, lineas_cat_agg, fabricantes_agg,
                             presupuesto_agg, categorias_diario_agg, lista_sucursales, fecha_reporte, fecha_info, mes_header,
