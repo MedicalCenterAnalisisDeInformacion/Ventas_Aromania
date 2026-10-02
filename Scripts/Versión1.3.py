@@ -6,13 +6,12 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 from datetime import date, timedelta
-# Ajustar rutas y el párametro
-EXCEL_PATH  = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/09_Septiembre/11-09-2026/Dataset.xlsx"
-OUTPUT_PATH = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/09_Septiembre/11-09-2026/index.html"
-BOL_EXCLUIR = ["BOLEUCH", "BOLEUGDE", "BOLEUMIN"]
-FECHA_BASE  = date(2026, 9, 11)
-ES_CIERRE_MES = False
 
+EXCEL_PATH  = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/10_Octubre/02-10-2026/Dataset.xlsx"
+OUTPUT_PATH = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/10_Octubre/02-10-2026/index.html"
+BOL_EXCLUIR = ["BOLEUCH", "BOLEUGDE", "BOLEUMIN"]
+FECHA_BASE  = date(2026, 9, 30)
+ES_CIERRE_MES = True
 LOGO_PATH = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/Logos/logo.png"
 MESES_ES = ["enero","febrero","marzo","abril","mayo","junio",
             "julio","agosto","septiembre","octubre","noviembre","diciembre"]
@@ -265,12 +264,6 @@ def procesar_fabricantes(vm, art_dim, suc, bol_list):
     return agg
 def procesar_presupuesto(agg, objetivos, suc, fecha_base, es_cierre=False):
     dias_mes = calendar.monthrange(fecha_base.year, fecha_base.month)[1]
-    # ── fecha_max_global: último día con datos REALES completos ──
-    # es_cierre=True  -> FECHA_BASE ya trae el día completo (cierre de mes),
-    #                    así que se usa tal cual, sin restar un día.
-    # es_cierre=False -> FECHA_BASE es "hoy" en una corrida diaria dentro del
-    #                    mes, con datos completos sólo hasta AYER (comportamiento
-    #                    original), por lo que se resta un día.
     if es_cierre:
         fecha_max_global = pd.Timestamp(fecha_base)
     else:
@@ -284,10 +277,6 @@ def procesar_presupuesto(agg, objetivos, suc, fecha_base, es_cierre=False):
         fechaMin=("FechaStr", "min"),
     ).reset_index()
     resumen_ventas["fechaMinDt"] = pd.to_datetime(resumen_ventas["fechaMin"])
-    # Base: TODAS las sucursales de la dimensión (para incluir también las que
-    # aún no tienen venta este mes, con pronóstico 0). Se conserva ClaveSucursal
-    # porque 'ObjetivosVentas' puede traer la clave numérica en vez del nombre,
-    # y porque se usará para ordenar la tabla final por número de sucursal.
     suc_clean = suc.drop_duplicates(subset=["NombreSucursal"])[["ClaveSucursal", "NombreSucursal"]].copy()
     suc_clean["NombreSucursal"] = suc_clean["NombreSucursal"].astype(str).str.strip()
     resumen_ventas["NombreSucursal"] = resumen_ventas["NombreSucursal"].astype(str).str.strip()
@@ -295,7 +284,6 @@ def procesar_presupuesto(agg, objetivos, suc, fecha_base, es_cierre=False):
     for c in ["unidadesActual", "ventasActual", "utilidadActual"]:
         resumen[c] = resumen[c].fillna(0)
     resumen["margen"] = _margen_seguro(resumen["utilidadActual"], resumen["ventasActual"])
-    # ── Presupuesto / Objetivo de ventas / Fecha de apertura ──
     col_suc = _detectar_columna(objetivos, "sucursal")
     col_pre = _detectar_columna(objetivos, "presupuesto")
     col_ape = _detectar_columna(objetivos, "apertura")
@@ -381,10 +369,6 @@ def procesar_presupuesto(agg, objetivos, suc, fecha_base, es_cierre=False):
         dias_operativos = max(0, (fin_mes - inicio).days + 1)
         dias_transcurridos = max(0, (fecha_max_global - inicio).days + 1)
         return pd.Series({"diasOperativosMes": dias_operativos, "diasTranscurridos": dias_transcurridos})
-    # Guard: si 'resumen' queda vacío (p.ej. inicio de mes sin ventas ni
-    # presupuesto todavía en ninguna sucursal), .apply(axis=1) sobre un
-    # DataFrame vacío no puede inferir la forma de 2 columnas que espera la
-    # asignación de abajo, y truena con "Columns must be same length as key".
     if resumen.empty:
         resumen["diasOperativosMes"] = pd.Series(dtype="int64")
         resumen["diasTranscurridos"] = pd.Series(dtype="int64")
@@ -460,9 +444,6 @@ def generar_html(agg, linea_agg, historico_agg, top_art_agg, lineas_cat_agg, fab
                  presupuesto_agg, categorias_diario_agg, lista_sucursales, fecha_reporte, fecha_info, mes_header,
                  current_period_label, resumenes_anteriores=None):
     resumenes_anteriores = resumenes_anteriores or []
-    # ── Pestañas extra "Resumen <Mes>" (mes(es) cerrados detectados mezclados
-    # en VentasMesCurso a inicios de mes). Si no hay ninguno, estas variables
-    # quedan vacías y el dashboard se ve exactamente igual que antes. ──
     tabs_nav_extra = ""
     tabs_content_extra = ""
     resumenes_ant_dict = {}
