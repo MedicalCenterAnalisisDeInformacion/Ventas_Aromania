@@ -7,11 +7,11 @@ import pandas as pd
 import numpy as np
 from datetime import date, timedelta
 
-EXCEL_PATH  = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/10_Octubre/02-10-2026/Dataset.xlsx"
-OUTPUT_PATH = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/10_Octubre/02-10-2026/index.html"
+EXCEL_PATH  = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/10_Octubre/07-10-2026/Dataset.xlsx"
+OUTPUT_PATH = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/10_Octubre/07-10-2026/index.html"
 BOL_EXCLUIR = ["BOLEUCH", "BOLEUGDE", "BOLEUMIN"]
-FECHA_BASE  = date(2026, 9, 30)
-ES_CIERRE_MES = True
+FECHA_BASE  = date(2026, 10, 7)
+ES_CIERRE_MES = False
 LOGO_PATH = r"C:/Users/adelarosa/Documents/Reportes/Dashboards/DashboardVentasDiarias_Aromania/Logos/logo.png"
 MESES_ES = ["enero","febrero","marzo","abril","mayo","junio",
             "julio","agosto","septiembre","octubre","noviembre","diciembre"]
